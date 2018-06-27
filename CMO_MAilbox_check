@@ -1,0 +1,109 @@
+cls
+Add-PSSnapin *exchange* -ErrorAction SilentlyContinue
+Set-ADServerSettings -ViewEntireForest 1
+$data = Get-Date -Format dd-MM-yyyy
+
+$allservers = @();
+$AllDatabases = @();
+$DB_Size = @();
+[int]$MBX_Count = 0;
+[int]$MBX_Quota = 0;
+[int]$mbx_size = 0;
+[int]$Unlimited_Quota = 0;
+[array]$lunobject = $null
+$allservers = Get-ExchangeServer  | ?{ $_.name -ilike "*vaxm*" -or $_.name -ilike "*wmucv*"} 
+
+foreach ($server in $allservers) {
+$AllDatabases = Get-MailboxDatabase -Server $server.name -Status
+################## Getting DISK FREE SPACE INFO ##############
+ $disks = get-WmiObject win32_logicaldisk -Computername $server.name | where {$_.deviceid -like "J:" -or $_.deviceid -like "K:" -or $_.deviceid -like "L:" -or $_.deviceid -like "N:" -or $_.deviceid -like "M:" -or $_.deviceid -like "O:"}
+   
+  foreach ($disk in $disks) {
+        $DiskObject = New-Object PSObject
+        $server_disksize+=$disk.size/1024/1024
+        $server_freespace+= $disk.freespace/1024/1024
+        $server_used = $server_disksize-$server_freespace
+        $DiskObject | add-member Noteproperty "DeviceID" $disk.deviceid
+        $DiskObject | add-member Noteproperty "LUN-SIZE (GB)" $([System.Math]::Round($disk.size/1024/1024/1024, 1)) 
+        $DiskObject | add-member Noteproperty "LUN-Free (GB)" $([System.Math]::Round($disk.freespace/1024/1024/1024, 1)) 
+        $DiskObject | add-member Noteproperty "LUN-Used (GB)" $([System.Math]::Round(($disk.size-$disk.freespace)/1024/1024/1024, 1))
+        $lunobject+=$diskobject
+    }
+    
+
+################## END GETTING FREE SPACE ####################
+
+Foreach ($database in $AllDatabases){
+##################START DATABASES one by One ########
+
+$t = new-object -typename Psobject 
+$t | add-member -membertype noteproperty -name MailboxDBsizeinGB -value ([math]::Round(([int64](get-wmiobject cim_datafile -computername $database.server -filter ('name=''' + $database.edbfilepath.pathname.replace("\","\\") + '''')).filesize / 1GB),2)) -passthru
+$DB_Size += $t
+$mailboxes = Get-Mailbox -Database $database -ResultSize Unlimited
+ForEach ($Mbx in $mailboxes) {
+#############  COLLECTING MAILBOX QUOTA DETAILS  #########
+$t = new-object -typename Psobject 
+$t | Add-Member -Name MBX_Quota -Value $mbx.ProhibitSendQuota -MemberType NoteProperty
+
+if ($mbx.ProhibitSendQuota -eq "Unlimited"){
+Write-Host " ###################  UNLIMITED QUOTA  #################" -ForegroundColor Yellow
+$Unlimited_Quota++;
+}else{
+$MBX_Quota = $MBX_Quota + $mbx.ProhibitSendQuota.Value.Tomb()
+$MBX_Count++;}
+#############  END COLLECT QUOTA DETAILS ################
+}
+
+$MBX_Quota
+$MBX_Count
+
+}  ############## STOP Databases counting. 
+
+
+
+
+
+
+
+
+}  #######   STOP for each Servers itterationn ######
+#Get-MailboxDatabase| ?{ $_.name -ilike "*store*"}
+
+$lunobject | Export-Csv "E:\ExchAdm\Export\Consumption_report\CMO_DATABASE_DISK_STATISTIC.csv" -NoTypeInformation 
+$lunobject | ConvertTo-Html -Head "CMO DATABASE STATISTIC" > "E:\ExchAdm\Export\Consumption_report\CMO_DATABASE_DISK_STATISTIC.HTML"
+
+$subject = "CMO mailboxes statistic $data" 
+$SmtpClient = new-object system.net.mail.smtpClient 
+$SmtpClient.Host = "tanz" 
+$mailMessage = New-Object system.net.mail.mailmessage 
+$mailmessage.IsBodyHtml = $true
+$mailmessage.from = ("  ")
+$mailmessage.to.add( "  " )
+
+$mailmessage.Subject = $subject
+
+$body = ""
+$body = "<HTML><body><H3>Detailed report of CMO users statistics generated on $data</H3> </br></br></br></br> <table border='1' >" 
+$body += "<colgroup></col></col></col></colgroup>"
+$body += "<tr><td>Number of mailboxes </td><td> $MBX_COUNT mailboxes  </td><td>###</td></tr> "
+$body += "<tr><td>Mailbox Quotas assigned </td><td> $MBX_Quota (Megabytes)  </td><td>###</td></tr> "
+$body += "<tr><td>Number of mailboxes with unlimited quotas </td><td> $Unlimited_Quota mailboxes  </td><td>###</td></tr> "
+$body += "</table></br></br>  All detailes about disk size is here </br>'E:\ExchAdm\Export\Consumption_report\CMO_DATABASE_DISK_STATISTIC.csv'</br></br>'E:\ExchAdm\Export\Consumption_report\CMO_DATABASE_DISK_STATISTIC.html'</br></br></br></br></br></br></br></br></br> Generated on dee111ash000020 server</body></html>"
+
+
+Write-Host "Sending mail...." 
+$mailmessage.Body = $body
+$mailmessage.priority = "Low"
+#$smtpclient.Send($mailmessage) 
+$mailMessage.Attachments.Add( "E:\ExchAdm\Export\Consumption_report\CMO_DATABASE_DISK_STATISTIC.HTML")
+$mailMessage.Attachments.Add( "E:\ExchAdm\Export\Consumption_report\CMO_DATABASE_DISK_STATISTIC.csv")
+$smtpclient.Send($mailmessage) 
+
+
+$SmtpClient.Dispose()
+$mailMessage.Dispose()
+Clear-Variable mailMessage
+Remove-Variable mailMessage
+Clear-Variable smtpclient
+Remove-Variable smtpclient
+Write-Host "Cleaning the variables.... "
