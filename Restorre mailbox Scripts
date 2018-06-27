@@ -1,0 +1,60 @@
+$RecoveryDB = "SW018005\recovery\Mailbox Store 08 - (WMUCV421)"
+$recoveryMB = "/O=DRESDNER BANK/OU=AG ADAG/CN=RECIPIENTS/CN=G3729"
+$MBx = "/O=DRESDNER BANK/OU=AG ADAG/CN=RECIPIENTS/CN=G3729"
+Restore-Mailbox -Identity $MBx -RSGDatabase $recoveryDB -RSGMailbox $recoveryMB -TargetFolder "Recovery" -whatif
+
+Restore-Mailbox -Identity $MBx -RSGDatabase $recoveryDB -RSGMailbox $recoveryMB -TargetFolder "Recovery_BMV" -whatif -IncludeFolders "\_FKRB\BMV" -BadItemLimit 100 -Verbose
+
+
+
+
+
+#NEW recovery storage group
+#***************************
+New-StorageGroup -Server SW019073 -LogFolderPath "D:\RESTORE\RSG421-DB01" -Name RSG421-DB01 -SystemFolderPath "D:\RESTORE\RSG421-DB01" -Recovery
+#New database adding to RSG, specifying DB wchich we are going to restore
+#make sure you are specifying correct PHYSICAL FILE NAME (I renamed my one to "421-priv01.edb"
+#**********************************************************************************************
+New-MailboxDatabase -MailboxDatabaseToRecover "WMUCV421\Storage Group 01\Mailbox Store 01 - (WMUCV421)" -StorageGroup "sw019073\RSG421-DB01" -EDBFilePath "D:\RESTORE\RSG421-DB01\421-priv01.edb"
+#Setting up ALLOW FILE RESTORE
+#********************************
+Set-MailboxDatabase -identity "SW019073\RSG421-DB01\Mailbox Store 01 - (WMUCV421)" -AllowFileRestore:$True
+#Mounting DB
+#*************
+Mount-Database -Identity "SW019073\RSG421-DB01\Mailbox Store 01 - (WMUCV421)"
+
+
+
+
+
+SEARCH RESULTS for recoverable items type NOTES
+***********************************************
+
+set-adserversettings -viewentireforest $true
+
+New-Mailbox -Name Restore-VERBOP1 -Discovery
+
+Add-MailboxPermission Restore-VERBOP1 -User USER -AccessRights FullAccess -InheritanceType all
+
+Add-RoleGroupMember "Discovery Management" -Member USER
+
+New-ManagementRoleAssignment -Name "Single-Item-Restore for USER" -User USER -Role "Mailbox Import Export"
+
+OPEN NEW EMS
+
+set-adserversettings -viewentireforest $true
+
+# Source mailbox is to be made for the Restore
+$searchMBX = get-mailbox VERBOP1
+
+# Discovery-Mailbox
+$tempMBX = get-mailbox Restore-VERBOP1
+
+$searchqry = "DAG”
+
+Search-Mailbox $searchMBX -TargetMailbox $tempMBX -TargetFolder $searchMBX.displayname.tostring() -LogLevel Full –SearchDumpsterOnly
+
+# Search-Mailbox $searchMBX -SearchQuery {Subject:"Interesting" AND From:"Ben Andrews" AND Sent:"10/13/2014"} -TargetMailbox $tempMBX -TargetFolder $searchMBX.displayname.tostring() -LogLevel Full -SearchDumpsterOnly
+
+
+get-mailbox $tempMBX | Get-MailboxFolderStatistics | ft FolderPath, FolderType, ItemsInFolder, FolderSize, ItemsInFolderAndSubfolders, DeletedItemsInFolderAndSubfolders, FolderAndSubfolderSize –autosize
