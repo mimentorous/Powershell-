@@ -1,0 +1,31 @@
+$DL = "EMPRESA"   ####  TYPE YOUR DL NAME HERE
+
+
+Function GetMemberList($DLName)
+{   [array]$data=$null
+
+	Foreach ($u in (Get-DistributionGroup $DLName | Get-DistributionGroupMember)) 
+    {
+
+	$t = new-object -typename Psobject
+	$t | Add-Member -Name  DistributionList $DLName.tostring()  -MemberType NoteProperty
+	$t | Add-Member -Name PrimarySmtpAddress -Value $u.primarysmtpaddress.tostring() -MemberType NoteProperty
+	$t | Add-Member -Name DisplayName -Value $u.DisplayName.tostring() -MemberType NoteProperty
+	$t | Add-Member -Name RecipientType -Value $u.Recipienttype.tostring() -MemberType NoteProperty
+	
+	$data += $t;
+    
+		If(Get-DistributionGroup $u.name  -ErrorAction SilentlyContinue ) 
+        {
+		GetMemberList $u.Name;
+        }
+		
+		
+	
+	}
+ Write-Output   $data 
+}
+
+$Data =  GetMemberList $DL
+
+
