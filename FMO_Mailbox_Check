@@ -1,0 +1,334 @@
+cls
+Start-Transcript E:\ExchAdm\Export\FMO_User_Report\FMO_Mailbox_Monitor.Log
+Add-PSSnapin *exchange*
+Write-Host "Adding Pssnapin"
+Set-ADServerSettings -ViewEntireForest 1
+#######Difining Variables#############
+$data = Get-Date -Format dd-MM-yyyy
+$allusers = @();
+$allArchives= @();
+[int]$countArchives=0;
+[int]$countUsers=0;
+[int]$MbxSize = 0;
+[int]$DeletedSize=0;
+[int]$AMbxSize = 0;
+[int]$ADeletedSize=0;
+[int]$DBSizeE1=0;
+$allusers_E2 = @();
+$allArchives_E2= @();
+[int]$countArchives_E2=0;
+[int]$countUsers_E2=0;
+[int]$MbxSize_E2 = 0;
+[int]$DeletedSize_E2=0;
+[int]$AMbxSize_E2 = 0;
+[int]$ADeletedSize_E2=0;
+[int]$DBSize_E2=0;
+[int]$MBX_Quota_E1 = 0;
+[int]$MBX_Quota_E2 = 0;
+[int]$MBX_ArchiveQuota_e1 = 0;
+[int]$MBX_ArchiveQuota_e2 = 0;
+[int]$Unlimited_Quota_E1 = 0;
+[int]$Unlimited_Quota_E2 = 0;
+
+Write-Host "Defined veriables" 
+################  Actual Calculation E1  ##################
+$AllDb_E1 = Get-MailboxDatabase -Identity * -Status
+
+Foreach ($db in $AllDb_E1) 
+{Write-Host $db
+        $allMbx = Get-MailboxStatistics -Database $db
+        $DBSizeE1 = $DBSizeE1 + $db.DatabaseSize.ToGB();
+        foreach ($mbx in $allMbx)
+        {#Write-Host $mbx.Displayname
+            if ($mbx.IsArchiveMailbox)
+             {
+           	$t = new-object -typename Psobject
+	        $t | Add-Member -Name  DisplayName $mbx.DisplayName.ToString()  -MemberType NoteProperty
+	        $t | Add-Member -Name  "TotalItemSize (MB)" $mbx.TotalItemSize.Value.ToMB()  -MemberType NoteProperty
+	        $t | Add-Member -Name  "TotalDeletedItemSize (MB)" $mbx.TotalDeletedItemSize.Value.ToMB()  -MemberType NoteProperty
+	        $t | Add-Member -Name  ItemCount $mbx.ItemCount.tostring()  -MemberType NoteProperty
+	        $t | Add-Member -Name  DeletedItemCount $mbx.DeletedItemCount.ToString()  -MemberType NoteProperty
+            $t | Add-Member -Name Database $mbx.Database.ToString() -membertype NoteProperty
+            $t | Add-Member -Name Quota "Unavailable"  -MemberType NoteProperty
+            $t | Add-Member -Name ArchiveQuota "Unavailable" -MemberType NoteProperty
+            
+            $allArchives += $t;
+            $countArchives = $countArchives+1; 
+            $ambxsize = $AMbxSize + $mbx.TotalItemSize.Value.ToMB()
+            $ADeletedSize = $ADeletedSize + $mbx.TotalDeletedItemSize.Value.ToMB()
+
+            } Else {
+           	$t = new-object -typename Psobject
+	        $t | Add-Member -Name  DisplayName $mbx.DisplayName.ToString()  -MemberType NoteProperty
+	        $t | Add-Member -Name  "TotalItemSize (MB)" $mbx.TotalItemSize.Value.ToMB()  -MemberType NoteProperty
+	        $t | Add-Member -Name  "TotalDeletedItemSize (MB)" $mbx.TotalDeletedItemSize.Value.ToMB()  -MemberType NoteProperty
+	        $t | Add-Member -Name  ItemCount $mbx.ItemCount.tostring()  -MemberType NoteProperty
+	        $t | Add-Member -Name  DeletedItemCount $mbx.DeletedItemCount.ToString()  -MemberType NoteProperty
+            $t | Add-Member -Name Database $mbx.Database.ToString() -membertype NoteProperty
+            ## Obtailing QUOTA values to predict maximum possible User MBX grow.
+            if (!$mbx.disconnectdate) {
+
+
+            if ($MB = Get-Mailbox $mbx.DisplayName.ToString() -ErrorAction SilentlyContinue) {
+
+
+            ###########Checking mailbox unlimited quotas ############### 
+            if ($mb.ProhibitSendQuota.IsUnlimited){ 
+            $t | Add-Member -Name "Quota MB" "Unlimited Quota"  -MemberType NoteProperty
+            $Unlimited_Quota_E1 += 1;
+            } else {
+            $t | Add-Member -Name "Quota MB" $mb.ProhibitSendQuota.Value.ToMB()  -MemberType NoteProperty
+            $MBX_Quota_E1 = $MBX_Quota_E1 + $mb.ProhibitSendQuota.Value.ToMB()
+            }######Here we finish to check if mailbox have unlimited quotas!!!! !! 
+
+
+
+            ###### HEre we need to check if mailbo have unlimited Archived Quota##############
+            if ($mb.ArchiveQuota.IsUnlimited) {
+            $t | Add-Member -Name "ArchiveQuota MB" "Unlimited" -MemberType NoteProperty
+            } else {
+            $t | Add-Member -Name "ArchiveQuota MB" $mb.ArchiveQuota.Value.ToMB() -MemberType NoteProperty
+            $MBX_ArchiveQuota_e1 = $MBX_ArchiveQuota_e1 + $mb.ArchiveQuota.Value.ToMB() 
+                        }  ####   Finish checking if mailbox have unlimited quota
+                         }else { ########################  If Get-Mailbox did not worked well, count it is as system mailbox.
+            $t | Add-Member -Name "Quota MB" "SYSTEM Mailbox"   -MemberType NoteProperty
+            $t | Add-Member -Name "ArchiveQuota MB" "SYSTEM Mailbox" -MemberType NoteProperty
+                    
+                    }
+
+                                            }else{
+                                            
+                                            ######## SOME Disconnected MAILBOX  ######
+            $t | Add-Member -Name "Quota MB" "DISCONNECTED Mailbox"   -MemberType NoteProperty
+            $t | Add-Member -Name "ArchiveQuota MB" "DISCONNECTED Mailbox" -MemberType NoteProperty
+            $MBX_Quota_E1 = $MBX_Quota_E1 + ($mbx.TotalItemSize.Value.ToMB() + $mbx.TotalDeletedItemSize.Value.ToMB() + 500   )
+                                            ######## SOME Disconnected MAILBOX  ######
+                                            ######## SOME Disconnected MAILBOX  ######
+                                            ######## SOME Disconnected MAILBOX  ######
+                                            ######## SOME Disconnected MAILBOX  ######
+
+                                            }
+                                             
+            $allusers += $t;
+            $countUsers = $countUsers +1;
+            $MbxSize = $MbxSize + $mbx.TotalItemSize.Value.ToMB()
+            $DeletedSize = $DeletedSize + $mbx.TotalDeletedItemSize.Value.ToMB()
+                                
+                    }##  END ELSE PART OF IF 
+        
+        }   ###   END FOREACH $MB in $AllMBX   CYCLE
+
+
+
+
+}  ####  END FOREACH $DB IN $ALLDBs
+
+$p = $MbxSize/1024 + $DeletedSize/1024
+$p2 = $AMbxSize/1024 + $ADeletedSize/1024
+$t = [math]::Round($p,2)
+$t2 = [math]::Round($p2,2)
+$allusers | sort displayname | ConvertTo-Html -Head "<H3>List of $countUsers users from E1 site generated on $data    </br> All those mailboxes together have $t Gygabytes</H3>"  > "E:\ExchAdm\Export\FMO_User_Report\AllUsers_E1_$data.html"
+$allArchives | sort displayname | ConvertTo-Html -Head "<H3>List of $countArchives users from E1 site generated on $data  </br> All those mailboxes together have $t2 Gygabytes</H3>"  > "E:\ExchAdm\Export\FMO_User_Report\AllArchives_E1_$data.html"
+$allusers | export-csv -Path "E:\ExchAdm\Export\FMO_User_Report\AllUsers_E1_$data.CSV"
+
+<#########################################################
+##########################################################
+$allusers_E2 = @();
+$allArchives_E2= @();
+[int]$countArchives_E2=0;
+[int]$countUsers_E2=0;
+[int]$MbxSize_E2 = 0;
+[int]$DeletedSize_E2=0;
+[int]$AMbxSize_E2 = 0;
+[int]$ADeletedSize_E2=0;
+[int]$DBSize_E2=0;
+#########################################################>
+
+
+################  Actual Calculation E2  ##################
+$AllDb_E2 = Get-MailboxDatabase -Identity E2-* -Status
+
+Foreach ($db in $AllDb_E2) 
+{Write-Host $db
+        $allMbx = Get-MailboxStatistics -Database $db
+        $DBSize_E2 = $DBSize_E2 + $db.DatabaseSize.ToGB();
+        foreach ($mbx in $allMbx)
+        {#Write-Host $mbx.displayname
+            if ($mbx.IsArchiveMailbox)
+             {
+           	$t = new-object -typename Psobject
+	        $t | Add-Member -Name  DisplayName $mbx.DisplayName.ToString()  -MemberType NoteProperty
+	        $t | Add-Member -Name  "TotalItemSize (MB)" $mbx.TotalItemSize.Value.ToMB()  -MemberType NoteProperty
+	        $t | Add-Member -Name  "TotalDeletedItemSize (MB)" $mbx.TotalDeletedItemSize.Value.ToMB()  -MemberType NoteProperty
+	        $t | Add-Member -Name  ItemCount $mbx.ItemCount.tostring()  -MemberType NoteProperty
+	        $t | Add-Member -Name  DeletedItemCount $mbx.DeletedItemCount.ToString()  -MemberType NoteProperty
+            $t | Add-Member -Name Database $mbx.Database.ToString() -membertype NoteProperty
+	        $allArchives_E2 += $t;
+            $countArchives_E2 = $countArchives_E2+1; 
+            $ambxsize_E2 = $AMbxSize_E2 + $mbx.TotalItemSize.Value.ToMB()
+            $ADeletedSize_E2 = $ADeletedSize_E2 + $mbx.TotalDeletedItemSize.Value.ToMB()
+
+            } Else {
+           	$t = new-object -typename Psobject
+	        $t | Add-Member -Name  DisplayName $mbx.DisplayName.ToString()  -MemberType NoteProperty
+	        $t | Add-Member -Name  "TotalItemSize (MB)" $mbx.TotalItemSize.Value.ToMB()  -MemberType NoteProperty
+	        $t | Add-Member -Name  "TotalDeletedItemSize (MB)" $mbx.TotalDeletedItemSize.Value.ToMB()  -MemberType NoteProperty
+	        $t | Add-Member -Name  ItemCount $mbx.ItemCount.tostring()  -MemberType NoteProperty
+	        $t | Add-Member -Name  DeletedItemCount $mbx.DeletedItemCount.ToString()  -MemberType NoteProperty
+            $t | Add-Member -Name Database $mbx.Database.ToString() -membertype NoteProperty
+## Obtailing QUOTA values to predict maximum possible User MBX grow.
+            if (!$mbx.disconnectdate) {
+
+
+            if ($MB = Get-Mailbox $mbx.DisplayName.ToString() -ErrorAction SilentlyContinue ) {
+
+
+            ###########Checking mailbox unlimited quotas ############### 
+            if ($mb.ProhibitSendQuota.IsUnlimited){ 
+            $t | Add-Member -Name "Quota MB" "Unlimited Quota"  -MemberType NoteProperty
+            $Unlimited_Quota_E2 += 1;
+            } else {
+            $t | Add-Member -Name "Quota MB" $mb.ProhibitSendQuota.Value.ToMB()  -MemberType NoteProperty
+            $MBX_Quota_E2 = $MBX_Quota_E2 + $mb.ProhibitSendQuota.Value.ToMB()
+            }######Here we finish to check if mailbox have unlimited quotas!!!! !! 
+
+
+
+            ###### HEre we need to check if mailbo have unlimited Archived Quota##############
+            if ($mb.ArchiveQuota.IsUnlimited) {
+            $t | Add-Member -Name "ArchiveQuota MB" "Unlimited" -MemberType NoteProperty
+            } else {
+            $t | Add-Member -Name "ArchiveQuota MB" $mb.ArchiveQuota.Value.ToMB() -MemberType NoteProperty
+            $MBX_ArchiveQuota_e2 = $MBX_ArchiveQuota_e2 + $mb.ArchiveQuota.Value.ToMB() 
+                        }  ####   Finish checking if mailbox have unlimited quota
+                         }else {
+            $t | Add-Member -Name "Quota MB" "SYSTEM Mailbox"   -MemberType NoteProperty
+            $t | Add-Member -Name "ArchiveQuota MB" "SYSTEM Mailbox" -MemberType NoteProperty
+                    
+                    }
+
+                                            }else{
+                                            
+                                            ######## SOME Disconnected MAILBOX  ######
+            $t | Add-Member -Name "Quota MB" "DISCONNECTED Mailbox"   -MemberType NoteProperty
+            $t | Add-Member -Name "ArchiveQuota MB" "DISCONNECTED Mailbox" -MemberType NoteProperty
+            $MBX_Quota_E2 = $MBX_Quota_E2 + ($mbx.TotalItemSize.Value.ToMB() + $mbx.TotalDeletedItemSize.Value.ToMB() + 500   )
+                                            ######## SOME Disconnected MAILBOX  ######
+                                            ######## SOME Disconnected MAILBOX  ######
+                                            ######## SOME Disconnected MAILBOX  ######
+                                            ######## SOME Disconnected MAILBOX  ######
+
+                                            }
+            
+
+            $allusers_E2 += $t;
+            $countUsers_E2 = $countUsers_E2 +1;
+            $MbxSize_E2 = $MbxSize_E2 + $mbx.TotalItemSize.Value.ToMB()
+            $DeletedSize_E2 = $DeletedSize_E2 + $mbx.TotaldeletedItemSize.Value.ToMB()
+                                
+                    }##  END ELSE PART OF IF 
+        
+        }   ###   END FOREACH $MB in $AllMBX   CYCLE
+
+
+
+
+}  ####  END FOREACH $DB IN $ALLDBs
+
+Write-host "Data collected, Lets generate report......"
+$p = $MbxSize_E2/1024 + $DeletedSize_E2/1024
+$p2 = $AMbxSize_E2/1024 + $ADeletedSize_E2 / 1024
+$t = [math]::Round($p,2)
+$t = [math]::Round($p2,2)
+$allusers_E2 | sort displayname | ConvertTo-Html -Head "<H3>List of $countUsers_E2 users from E1 site generated on $data    </br> All those mailboxes together have $t Gygabytes</H3>"  > "E:\ExchAdm\Export\FMO_User_Report\AllUsers_E2_$data.html"
+$allArchives_E2 | sort displayname | ConvertTo-Html -Head "<H3>List of $countArchives_E2 users from E1 site generated on $data  </br> All those mailboxes together have $t2 Gygabytes</H3>"  > "E:\ExchAdm\Export\FMO_User_Report\AllArchives_E2_$data.html"
+$allusers_e2 | export-csv -Path "E:\ExchAdm\Export\FMO_User_Report\AllUsers_E2_$data.CSV"
+Write-Host "E2 generated...."
+
+<##
+
+END COMPUTING FOR E2
+
+##>
+
+
+##################################################################
+############### Calculating Allocated disk space##################
+##################################################################
+
+$Input_File = "\\SerrverrName\e`$\ExchAdm\Export\lkjghkjhlkjhljkhlk\"
+$path = dir -Path $Input_File
+$path[$path.Count -4].Name
+$New_Name = $Input_File + $path[$path.Count -4].Name + "\Disk-Size_" + $path[$path.Count -4].Name + ".csv"
+
+$New_Name
+$disk = @();
+$temp = Import-Csv $New_Name
+$disk = $temp | Measure-Object -Property "TOTAL-SIZE (GB)" -Sum | select sum
+$disk2 = $disk.Sum.ToString()
+$disk2
+
+#################################################################
+
+
+## mail
+$subject = "FMO mailboxes statistic $data" 
+$SmtpClient = new-object system.net.mail.smtpClient 
+$SmtpClient.Host = "tanz" 
+$mailMessage = New-Object system.net.mail.mailmessage 
+$mailmessage.IsBodyHtml = $true
+$mailmessage.from = ("mde")
+$mailmessage.to.add( "   " )
+
+
+$mailmessage.Subject = $subject
+$mailMessage.Attachments.Add("E:\ExchAdm\Export\FMO_User_Report\AllUsers_E1_$data.html")
+$mailMessage.Attachments.Add("E:\ExchAdm\Export\FMO_User_Report\AllArchives_E1_$data.html")
+$mailMessage.Attachments.Add("E:\ExchAdm\Export\FMO_User_Report\AllArchives_E2_$data.html")
+$mailMessage.Attachments.Add("E:\ExchAdm\Export\FMO_User_Report\AllUsers_E2_$data.html")
+
+<#
+Number of mailboxes E1 E2
+Size of each mailbox
+Number of items in each mailbox
+Storage utilization
+#>
+$body = "<HTML><body><H3>Detailed report of FMO users statistics generated on $data</H3> </br></br></br></br> <table border='1' >" 
+$body += "<colgroup></col></col></col></colgroup>"
+$body += "<tr><td>Number of mailboxes </td><td> E1 = $countUsers</td><td> E2 = $countusers_E2</td></tr> "
+$body += "<tr><td>Number of Archive mailboxes </td><td> E1 = $countarchives</td><td> E2 = $countArchives_E2</td></tr> "
+$body += "<tr><td>Database Size on Disk's</td><td> E1 = $DBSizeE1 ( Gb ) </td><td> E2 = $DBSize_E2 (Gb) </td></tr>"  ## Storage Utilization is general for both mailboxes and Archives.
+$body += "<tr><td>Number of items</td><td>Details in Attachments</td><td>Details in Attachments</td></tr>" ####  Number of items
+$t = [math]::Round($MBX_Quota_E1 / 1024,2)
+$p = [math]::Round($MBX_Quota_E2 / 1024,2)
+$body += "<tr><td>Assigned Quota</td><td> E1 = $t ( Gb )  </td><td> E2 = $p ( Gb ) </td></tr>" ####  To predict possible database grow, we need all assigned quotas 
+$t = [math]::Round($MBX_ArchiveQuota_e1 / 1024,2)
+$p = [math]::Round($MBX_ArchiveQuota_e2 / 1024,2)
+$body += "<tr><td>Assigned Archives Quota</td><td> E1 = $t ( Gb )  </td><td> E2 = $p ( Gb ) </td></tr>" ####  How big can be our archives.
+$body += "<tr><td>Number of mailboxes with Unlimited Quota</td><td> E1 = $Unlimited_Quota_E1 mailboxes </td><td> E2 = $Unlimited_Quota_E2 mailboxes </td></tr>" ####  Number of mailboxes with unlimited quotas. 
+$body += "<tr><td>Total amount of allocated disks</td><td  colspan='2'> $disk2 ( Gb )  </td></tr>" ####  Number of mailboxes with unlimited quotas. 
+
+
+
+
+
+$body += "</table></br></br></br></br></br></br></br></br></br></br></br></br></br></br> Generated on Server server</body></html>"
+
+Write-Host "Sending mail...." 
+$mailmessage.Body = $body
+$mailmessage.priority = "Low"
+$smtpclient.Send($mailmessage) 
+$SmtpClient.Dispose()
+$mailMessage.Dispose()
+Clear-Variable mailMessage
+Remove-Variable mailMessage
+Clear-Variable smtpclient
+Remove-Variable smtpclient
+Write-Host "Cleaning the variables.... "
+
+
+
+
+Stop-Transcript
+
+
