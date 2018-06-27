@@ -1,0 +1,95 @@
+#Set EAS IIS specific values
+Param
+(
+    # Server to be set up
+    [Parameter(Mandatory=$true,
+               ValueFromPipelineByPropertyName=$true,
+               Position=0)]
+    [string]$Server
+)
+
+$date = Get-Date -Format yyyy-MM-dd_HH-mm-ss
+
+#Checking current values FE, BE and Recycle Sync App Pool
+
+Write-Host "Checking current values FE, BE and Recycle Sync App Pool" -ForegroundColor Yellow `n
+
+$oldFEmaxAllowedContentLength = Invoke-Command -ComputerName $server {Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/Microsoft-Server-ActiveSync'  -filter "system.webServer/security/requestFiltering/requestLimits" -name "maxAllowedContentLength"}
+$oldFEmaxRequestLength = Invoke-Command -ComputerName $server {Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/Microsoft-Server-ActiveSync'  -filter "system.web/httpRuntime" -name "maxRequestLength"}
+$oldFEuploadReadAheadSize = Invoke-Command -ComputerName $server {Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/Microsoft-Server-ActiveSync'  -filter "system.webServer/serverRuntime" -name "uploadReadAheadSize"}
+
+$oldBEmaxAllowedContentLength = Invoke-Command -ComputerName $server {Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Exchange Back End/Microsoft-Server-ActiveSync'  -filter "system.webServer/security/requestFiltering/requestLimits" -name "maxAllowedContentLength"}
+$oldBEmaxRequestLength = Invoke-Command -ComputerName $server {Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Exchange Back End/Microsoft-Server-ActiveSync'  -filter "system.web/httpRuntime" -name "maxRequestLength"}
+$oldBEuploadReadAheadSize = Invoke-Command -ComputerName $server {Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Exchange Back End/Microsoft-Server-ActiveSync'  -filter "system.webServer/serverRuntime" -name "uploadReadAheadSize"}
+$oldBEMaxDocumentDataSize = Invoke-Command -ComputerName $server {Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Exchange Back End/Microsoft-Server-ActiveSync'  -filter "appSettings/add[@key='MaxDocumentDataSize']" -name "value"}
+$a = $oldBEMaxDocumentDataSize.ItemXPath.Split("'")
+
+$oldRecycle = Invoke-Command -ComputerName $server {Import-Module WebAdministration ; Get-ItemProperty -Path "IIS:\AppPools\MSExchangeSyncAppPool" -Name Recycling.periodicRestart.time}
+
+Write-Host "Current EAS settings for " $server -ForegroundColor Cyan
+Write-Host "FE " $oldFEmaxAllowedContentLength.name " = " $oldFEmaxAllowedContentLength.value " / 70000000"
+Write-Host "FE " $oldFEmaxRequestLength.name "        = " $oldFEmaxRequestLength.value " / 68100"
+Write-Host "FE " $oldFEuploadReadAheadSize.name "     = " $oldFEuploadReadAheadSize.value " / 10485760"
+Write-Host "BE " $oldBEmaxAllowedContentLength.name " = " $oldBEmaxAllowedContentLength.value " / 70000000"
+Write-Host "BE " $oldBEmaxRequestLength.name "        = " $oldBEmaxRequestLength.value " / 68100"
+Write-Host "BE " $oldBEuploadReadAheadSize.name "     = " $oldBEuploadReadAheadSize.value " / 10485760"
+Write-Host "BE " $a[1] "     = " $oldBEMaxDocumentDataSize.value " / 70000000"
+Write-Host "Recycle SyncAppPool " $oldRecycle.name "   = " $oldRecycle.value " / 1.05:00:00" `n
+
+
+#Backup existing config files
+Write-Host "Backing up current config files"
+Copy-Item -Path "\\$server\E$\Program Files\Microsoft\Exchange Server\v15\FrontEnd\HttpProxy\sync\web.config" -Destination "\\$server\E$\Program Files\Microsoft\Exchange Server\v15\FrontEnd\HttpProxy\sync\web.config.bak-$date"
+Copy-Item -Path "\\$server\E$\Program Files\Microsoft\Exchange Server\v15\ClientAccess\Sync\web.config" -Destination  "\\$server\E$\Program Files\Microsoft\Exchange Server\v15\ClientAccess\Sync\web.config.bak-$date"
+
+#FE attachment limits
+Write-Host "Setting up FE maxAllowedContentLength"
+Invoke-Command -ComputerName $server {Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/Microsoft-Server-ActiveSync' -filter "system.webServer/security/requestFiltering/requestLimits" -name "maxAllowedContentLength" -value 70000000}
+Write-Host "Setting up FE maxRequestLength"
+Invoke-Command -ComputerName $server {Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/Microsoft-Server-ActiveSync' -filter "system.web/httpRuntime" -name "maxRequestLength" -value 68100} 
+Write-Host "Setting up FE uploadReadAheadSize"
+Invoke-Command -ComputerName $server {Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/Microsoft-Server-ActiveSync' -filter "system.webServer/serverRuntime" -name "uploadReadAheadSize" -value 10485760}
+
+#BE attachment limits
+Write-Host "Setting up BE maxAllowedContentLength"
+Invoke-Command -ComputerName $server {Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Exchange Back End/Microsoft-Server-ActiveSync' -filter "system.webServer/security/requestFiltering/requestLimits" -name "maxAllowedContentLength" -value 70000000}
+Write-Host "Setting up BE maxRequestLength"
+Invoke-Command -ComputerName $server {Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Exchange Back End/Microsoft-Server-ActiveSync' -filter "system.web/httpRuntime" -name "maxRequestLength" -value 68100}
+Write-Host "Setting up BE uploadReadAheadSize"
+Invoke-Command -ComputerName $server {Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Exchange Back End/Microsoft-Server-ActiveSync' -filter "system.webServer/serverRuntime" -name "uploadReadAheadSize" -value 10485760}
+Write-Host "Setting up BE MaxDocumentDataSize"
+Invoke-Command -ComputerName $server {Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Exchange Back End/Microsoft-Server-ActiveSync' -filter "appSettings/add[@key='MaxDocumentDataSize']" -name "value" -value "70000000"}
+
+#ActiveSync Application Pool recycling
+Write-Host "Setting up Sync AppPool recycling" `n
+Invoke-Command -ComputerName $server {Import-Module WebAdministration ; Set-ItemProperty -Path "IIS:\AppPools\MSExchangeSyncAppPool" -Name Recycling.periodicRestart.time -Value 1.05:00:00}
+
+#IISRESET
+Write-Host "Executing IISRESET for " $server -ForegroundColor Yellow `n
+IISRESET $server
+
+#Validating new values FE, BE and Recycle Sync App Pool
+Write-Host ""
+Write-Host "Validating new values FE, BE and Recycle Sync App Pool" -ForegroundColor Yellow `n
+
+$newFEmaxAllowedContentLength = Invoke-Command -ComputerName $server {Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/Microsoft-Server-ActiveSync'  -filter "system.webServer/security/requestFiltering/requestLimits" -name "maxAllowedContentLength"}
+$newFEmaxRequestLength = Invoke-Command -ComputerName $server {Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/Microsoft-Server-ActiveSync'  -filter "system.web/httpRuntime" -name "maxRequestLength"}
+$newFEuploadReadAheadSize = Invoke-Command -ComputerName $server {Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Default Web Site/Microsoft-Server-ActiveSync'  -filter "system.webServer/serverRuntime" -name "uploadReadAheadSize"}
+
+$newBEmaxAllowedContentLength = Invoke-Command -ComputerName $server {Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Exchange Back End/Microsoft-Server-ActiveSync'  -filter "system.webServer/security/requestFiltering/requestLimits" -name "maxAllowedContentLength"}
+$newBEmaxRequestLength = Invoke-Command -ComputerName $server {Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Exchange Back End/Microsoft-Server-ActiveSync'  -filter "system.web/httpRuntime" -name "maxRequestLength"}
+$newBEuploadReadAheadSize = Invoke-Command -ComputerName $server {Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Exchange Back End/Microsoft-Server-ActiveSync'  -filter "system.webServer/serverRuntime" -name "uploadReadAheadSize"}
+$newBEMaxDocumentDataSize = Invoke-Command -ComputerName $server {Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST/Exchange Back End/Microsoft-Server-ActiveSync'  -filter "appSettings/add[@key='MaxDocumentDataSize']" -name "value"}
+$b = $newBEMaxDocumentDataSize.ItemXPath.Split("'")
+
+$newRecycle = Invoke-Command -ComputerName $server {Import-Module WebAdministration ; Get-ItemProperty -Path "IIS:\AppPools\MSExchangeSyncAppPool" -Name Recycling.periodicRestart.time}
+
+Write-Host "Current EAS settings for " $server -ForegroundColor Green
+Write-Host "FE " $newFEmaxAllowedContentLength.name " = " $newFEmaxAllowedContentLength.value " / 70000000"
+Write-Host "FE " $newFEmaxRequestLength.name "        = " $newFEmaxRequestLength.value " / 68100"
+Write-Host "FE " $newFEuploadReadAheadSize.name "     = " $newFEuploadReadAheadSize.value " / 10485760"
+Write-Host "BE " $newBEmaxAllowedContentLength.name " = " $newBEmaxAllowedContentLength.value " / 70000000"
+Write-Host "BE " $newBEmaxRequestLength.name "        = " $newBEmaxRequestLength.value " / 68100"
+Write-Host "BE " $newBEuploadReadAheadSize.name "     = " $newBEuploadReadAheadSize.value " / 10485760"
+Write-Host "BE " $b[1] "     = " $newBEMaxDocumentDataSize.value " / 70000000"
+Write-Host "Recycle SyncAppPool " $newRecycle.name "   = " $newRecycle.value " / 1.05:00:00" `n
