@@ -1,0 +1,20 @@
+start-transcript 
+ipconfig /all 
+nslookup       mail
+nslookup emea1.mail
+nslookup emea2.mail
+if(test-path c:\agis\exchange_check.ps1){c:\agis\exchange_check.ps1} 
+$wmi=get-WMIObject win32_networkadapterconfiguration -filter "IPEnabled='TRUE'"| where {$_.IPAddress -imatch '(10.1|194.127)'}
+$wmi.DNSServerSearchOrder
+"sleep - press enter or other key for continue"
+$nn=read-host 
+$dns = "***.***.***.***","***.***.***.***","***.***.***.***"
+$wmi.SetDNSServerSearchOrder($dns)
+nslookup       mail
+nslookup emea1.mail
+nslookup emea2.mail
+$wmi=get-WMIObject win32_networkadapterconfiguration -filter "IPEnabled='TRUE'"| where {$_.IPAddress -imatch '(10.1|194.127)'}
+$wmi.DNSServerSearchOrder
+if(test-path c:\agis\exchange_check.ps1){c:\agis\exchange_check.ps1}  
+"sleep - press enter or other key for continue"
+$nn=read-host 
