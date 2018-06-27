@@ -1,0 +1,14 @@
+## User alias
+$UserAlias = "Username"
+
+
+## At first we need to get all folders from mailbox that is interested for us
+$folders = Get-Mailbox $UserAlias | Get-MailboxFolderStatistics | sort name | select FolderPath
+
+## Now it's time to get permissions granted for each and every folder one by one: 
+Foreach ( $folder in $Folders) {$t = $UserAlias + ":" + $folder.folderpath ; $t ; $data += Get-MailboxFolderPermission -Identity ($t).replace("/","\") }
+
+## Here we just filtering to only a user name that is interested for us, In this case I was need to check to which folders in mailbox G3276 have access user "Conzelmann"
+$data | ?{$_.user -ilike "*Conzelmann*"} | ft -a
+
+
