@@ -1,0 +1,78 @@
+
+#Global Variables
+$currentPath = Get-Location
+$fileName = $MyInvocation.MyCommand.Name
+$scriptPath = "$currentPath\$fileName"
+$date = Get-Date -format "yyyy-MM-dd HH:mm:ss"
+
+#Making sure the SOURCE exists so that Write-EventLog will not throw error
+if ([System.Diagnostics.EventLog]::SourceExists("MSEXCH_MaxConcurrentApi") -eq $false) {New-Eventlog -LogName "Application" -Source "MSEXCH_MaxConcurrentApi"}
+
+#Retrieving MaxConcurrentApi status from all Windows 2008 R2 - Exchnage 2007 servers
+
+. C:\agis\fx-CheckMaxConcurrentApi.ps1
+$r = @()
+foreach ($m in (get-ExchangeServer sw* | where {$_.ServerRole -imatch 'Client' -and $_.Site -imatch 'MUC-05'} | sort name | select -ExpandProperty name)) {
+$t = CheckMaxConcurrentApi -computername $m 
+$t 
+$r += $t 
+}
+
+$Rerror = $r | ?{$_."Problem Detected" -eq $true}
+$Rwarn = $r | ?{$_."Current Threads in Use (Semaphore Holders)" -gt 90}
+
+#Writing eventLog entry so that ITM can pick it up and open a ticket in Remedy
+$reportOK = $r | Select-Object @{N="Time";E={$_."Detection Time"}},@{N="Problem";E={$_."Problem Detected"}},@{N="Server";E={$_."Server Name"}},@{N="CurrEffMXCCA";E={$_."Current Effective MaxConcurrentApi Setting"}},@{N="SuggMXCCA";E={$_."Suggested MaxConcurrentApi Setting (may be same as current)"}},@{N="CurrThreads";E={$_."Current Threads in Use (Semaphore Holders)"}},@{N="ClientWait";E={$_."Clients Currently Waiting (Semaphore Waiters)"}},@{N="CumClTimeout";E={$_."Cumulative Client Timeouts (Semaphore Timeouts)"}},@{N="CumulMXCCA";E={$_."Cumulative MaxConcurrentApi Thread Uses (Semaphore Acquires)"}},@{N="Duration";E={$_."Duration of Calls (Avg Semaphore Hold Time)"}} | ft -a | Out-String
+$reportError = $Rerror | Select-Object @{N="Time";E={$_."Detection Time"}},@{N="Problem";E={$_."Problem Detected"}},@{N="Server";E={$_."Server Name"}},@{N="CurrEffMXCCA";E={$_."Current Effective MaxConcurrentApi Setting"}},@{N="SuggMXCCA";E={$_."Suggested MaxConcurrentApi Setting (may be same as current)"}},@{N="CurrThreads";E={$_."Current Threads in Use (Semaphore Holders)"}},@{N="ClientWait";E={$_."Clients Currently Waiting (Semaphore Waiters)"}},@{N="CumClTimeout";E={$_."Cumulative Client Timeouts (Semaphore Timeouts)"}},@{N="CumulMXCCA";E={$_."Cumulative MaxConcurrentApi Thread Uses (Semaphore Acquires)"}},@{N="Duration";E={$_."Duration of Calls (Avg Semaphore Hold Time)"}} | ft -a | Out-String
+$reportWarn = $Rwarn | Select-Object @{N="Time";E={$_."Detection Time"}},@{N="Problem";E={$_."Problem Detected"}},@{N="Server";E={$_."Server Name"}},@{N="CurrEffMXCCA";E={$_."Current Effective MaxConcurrentApi Setting"}},@{N="SuggMXCCA";E={$_."Suggested MaxConcurrentApi Setting (may be same as current)"}},@{N="CurrThreads";E={$_."Current Threads in Use (Semaphore Holders)"}},@{N="ClientWait";E={$_."Clients Currently Waiting (Semaphore Waiters)"}},@{N="CumClTimeout";E={$_."Cumulative Client Timeouts (Semaphore Timeouts)"}},@{N="CumulMXCCA";E={$_."Cumulative MaxConcurrentApi Thread Uses (Semaphore Acquires)"}},@{N="Duration";E={$_."Duration of Calls (Avg Semaphore Hold Time)"}} | ft -a | Out-String
+
+if (!$Rerror -and !$Rwarn) {Write-EventLog –LogName Application –Source “MSEXCH_MaxConcurrentApi” –EntryType Information –EventID 11111 –Message "There is not an issue with MS Exchange MaxConcurrentApi $reportOK"}
+
+elseif (!$Rerror -and $Rwarn) {
+Write-EventLog –LogName Application –Source “MSEXCH_MaxConcurrentApi” –EntryType Warning –EventID 12345 –Message "MS Exchange MaxConcurrentApi is above normal, please check it $reportWarn"
+
+[string]$body ="<html><h2 style='color:blue;'>WARNING - MaxConcurrentApi values are above normal...</h2><body style='font-size:9pt;font-family:Courier New'>"
+$body +="<h5 style='color:blue;'>Created by script $scriptPath, executed on $env:computername</h5>"
+$body +="<h5 style='color:blue;'>$date</h5>"
+$body += $Rwarn | convertTo-HTML -Fragment
+$body = $body -replace "<table>","<table style='font-size:9pt;font-family:Courier New;text-align: right'>"
+
+$subject = "WARNING - MaxConcurrentApi values are above normal..."  
+$SmtpClient = new-object system.net.mail.smtpClient 
+$SmtpClient.Host = "ServerName" 
+$mailMessage = New-Object system.net.mail.mailmessage 
+$mailmessage.IsBodyHtml = $true
+$mailmessage.from = ("Email@address")
+#foreach ($email in $emails) {$mailmessage.to.add($email)}
+#$mailmessage.to.add("Email@address")
+$mailmessage.to.add("Email@address")
+$mailmessage.Subject = $subject
+$mailmessage.Body = $body
+$mailmessage.priority = "Normal"
+$smtpclient.Send($mailmessage) 
+}
+
+else {
+Write-EventLog –LogName Application –Source “MSEXCH_MaxConcurrentApi” –EntryType Error –EventID 55555 –Message "MS Exchange MaxConcurrentApi is on one or more servers, check it $reportError"
+
+[string]$body ="<html><h2 style='color:red;'>ERROR - MaxConcurrentApi issue is active on one or more servers!!!</h2><body style='font-size:9pt;font-family:Courier New'>"
+$body +="<h5 style='color:red;'>Created by script $scriptPath, executed on $env:computername</h5>"
+$body +="<h5 style='color:red;'>$date</h5>"
+$body += $rError | convertTo-HTML -Fragment
+$body = $body -replace "<table>","<table style='font-size:9pt;font-family:Courier New;text-align: right'>"
+
+$subject = "ERROR - MaxConcurrentApi issue is active on one or more servers!!!"  
+$SmtpClient = new-object system.net.mail.smtpClient 
+$SmtpClient.Host = "ServerName" 
+$mailMessage = New-Object system.net.mail.mailmessage 
+$mailmessage.IsBodyHtml = $true
+$mailmessage.from = ("Email@address")
+#foreach ($email in $emails) {$mailmessage.to.add($email)}
+#$mailmessage.to.add("Email@address")
+$mailmessage.to.add("Email@address")
+$mailmessage.Subject = $subject
+$mailmessage.Body = $body
+$mailmessage.priority = "Normal"
+$smtpclient.Send($mailmessage) 
+}
+
